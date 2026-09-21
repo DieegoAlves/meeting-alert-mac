@@ -1,0 +1,32 @@
+name: CI
+
+# Build check on every push / PR. Runs with NO secrets: it proves the app compiles WITHOUT any
+# embedded OAuth credentials (Secrets.swift is generated with nil placeholders). F-065.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Show toolchain
+        run: swift --version
+
+      # No GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in the environment → nil Secrets.swift.
+      - name: Generate empty Secrets.swift (no credentials)
+        run: ./scripts/gen-secrets.sh
+
+      - name: Build (release)
+        run: swift build -c release

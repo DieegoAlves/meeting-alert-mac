@@ -1,0 +1,75 @@
+name: Release
+
+# Cuts a GitHub Release with the distributable DMG whenever a v* tag is pushed.
+# The Google OAuth credentials are injected from repo secrets into the build (F-065); they never
+# appear in logs (gen-secrets.sh does not print values, and the DMG is a binary artifact).
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # create the Release and upload assets
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so release notes can diff from the previous tag
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build DMG (embeds OAuth credentials from secrets)
+        id: build
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          ./scripts/package-dmg.sh "${{ steps.ver.outputs.version }}"
+          # package-dmg.sh prints `DMG_PATH=…` / `DMG_SHA256=…` (no secret values).
+          DMG_PATH="dist/MeetingAlert-${{ steps.ver.outputs.version }}.dmg"
+          SHA="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
+          echo "dmg_path=$DMG_PATH" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "$SHA  $(basename "$DMG_PATH")" > "$DMG_PATH.sha256"
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          PREV="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          {
+            echo "## Meeting Alert ${GITHUB_REF_NAME}"
+            echo ""
+            echo "App de barra de menu (macOS 14+) que avisa antes das reuniões do Google Agenda."
+            echo ""
+            echo "**Instalação:** baixe o \`.dmg\`, arraste para *Aplicativos* e, na PRIMEIRA abertura,"
+            echo "clique com o botão direito → **Abrir** (o app não é notarizado — sem conta Apple Developer)."
+            echo ""
+            echo "\`\`\`"
+            echo "SHA256: ${{ steps.build.outputs.sha256 }}"
+            echo "\`\`\`"
+            echo ""
+            echo "### Alterações"
+            if [ -n "$PREV" ]; then
+              git log --pretty='- %s' "$PREV..${GITHUB_REF_NAME}"
+            else
+              git log --pretty='- %s' -n 30
+            fi
+          } > notes.md
+          cat notes.md
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Meeting Alert ${{ github.ref_name }}
+          body_path: notes.md
+          files: |
+            ${{ steps.build.outputs.dmg_path }}
+            ${{ steps.build.outputs.dmg_path }}.sha256
