@@ -1,0 +1,23 @@
+# Build products
+.build/
+build/
+DerivedData/
+*.xcodeproj
+*.dSYM/
+
+# Distribution artifacts
+*.dmg
+dist/
+
+# Generated, build-time secrets — NEVER commit (F-065).
+# Produced by scripts/gen-secrets.sh from GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.
+Sources/Core/Secrets.swift
+
+# Local credentials (also live only in ~/Library/Application Support at runtime)
+credentials.json
+
+# macOS
+.DS_Store
+
+# Overclock local app state
+.overclock-app/
